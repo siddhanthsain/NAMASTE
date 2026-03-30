@@ -137,7 +137,7 @@ cd frontend && npm install && npm run dev
 
 ## Built By
 
-Utkarsh — Final year B.Tech CS, Arya Institute of Engineering & Technology, Jaipur  
+Siddhanth — Final year B.Tech CS, Arya Institute of Engineering & Technology, Jaipur  
 Built as a response to SIH 2025 Problem Statement: *"Develop API code to integrate NAMASTE and/or ICD-11 via TM2 into existing EMR systems compliant with EHR Standards for India"*
 
 ---
