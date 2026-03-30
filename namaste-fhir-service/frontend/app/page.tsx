@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 
-const API = "https://curly-capybara-qwg7jj7g759cgg-8000.app.github.dev";
+const API = "https://namaste-fhir-backend.onrender.com";
 
 interface NAMASTECode {
   namaste_code: string;
