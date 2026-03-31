@@ -15,9 +15,16 @@ async def suggest_mapping(namaste_code: str):
     if not doc:
         raise HTTPException(status_code=404, detail=f"Code {namaste_code} not found")
 
-    search_term = extract_search_term(doc["term_english"])
-    tm2_results = await search_icd11(search_term, use_tm2=True)
-    bio_results = await search_icd11(search_term, use_tm2=False)
+    english_term = extract_search_term(doc["term_english"])
+    original_term = doc.get("term_original", "").strip()
+
+    # For TM2: use original Sanskrit/Tamil/Arabic term
+    # For biomedicine: use English term
+    tm2_query = original_term if original_term and original_term not in ["nan", "-", ""] else english_term
+    bio_query = english_term
+
+    tm2_results = await search_icd11(tm2_query, use_tm2=True)
+    bio_results = await search_icd11(bio_query, use_tm2=False)
 
     update = {"updated_at": datetime.utcnow()}
     if tm2_results:
@@ -39,18 +46,19 @@ async def suggest_mapping(namaste_code: str):
     return {
         "namaste_code": namaste_code,
         "term": doc["term_english"],
-        "search_term_used": search_term,
+        "tm2_query": tm2_query,
+        "bio_query": bio_query,
         "tm2_suggestions": tm2_results,
         "biomedicine_suggestions": bio_results,
         "auto_applied": update
     }
 
 @router.post("/bulk")
-async def bulk_map(batch_size: int = 50, system: str = None):
+async def bulk_map(batch_size: int = 50, system: str = None, status: str = "unmapped"):
     db = get_db()
     collection = db["namaste_codes"]
 
-    query = {"mapping_status": "unmapped"}
+    query = {"mapping_status": status}
     if system:
         query["system"] = system
 
@@ -58,7 +66,7 @@ async def bulk_map(batch_size: int = 50, system: str = None):
     docs = await cursor.to_list(length=batch_size)
 
     if not docs:
-        return {"message": "No unmapped codes found", "processed": 0}
+        return {"message": f"No codes with status '{status}' found", "processed": 0}
 
     processed = 0
     mapped = 0
@@ -67,9 +75,13 @@ async def bulk_map(batch_size: int = 50, system: str = None):
 
     for doc in docs:
         try:
-            search_term = extract_search_term(doc["term_english"])
-            tm2_results = await search_icd11(search_term, use_tm2=True)
-            bio_results = await search_icd11(search_term, use_tm2=False)
+            english_term = extract_search_term(doc["term_english"])
+            original_term = doc.get("term_original", "").strip()
+            tm2_query = original_term if original_term and original_term not in ["nan", "-", ""] else english_term
+            bio_query = english_term
+
+            tm2_results = await search_icd11(tm2_query, use_tm2=True)
+            bio_results = await search_icd11(bio_query, use_tm2=False)
 
             update = {"updated_at": datetime.utcnow()}
             if tm2_results:
@@ -90,10 +102,7 @@ async def bulk_map(batch_size: int = 50, system: str = None):
                 update["mapping_status"] = "no_match"
                 no_match += 1
 
-            await collection.update_one(
-                {"namaste_code": doc["namaste_code"]},
-                {"$set": update}
-            )
+            await collection.update_one({"namaste_code": doc["namaste_code"]}, {"$set": update})
             processed += 1
             await asyncio.sleep(0.1)
 
@@ -101,7 +110,7 @@ async def bulk_map(batch_size: int = 50, system: str = None):
             failed += 1
             print(f"Error mapping {doc['namaste_code']}: {e}")
 
-    remaining = await collection.count_documents({"mapping_status": "unmapped"})
+    remaining = await collection.count_documents({"mapping_status": status})
     return {
         "processed": processed,
         "mapped": mapped,

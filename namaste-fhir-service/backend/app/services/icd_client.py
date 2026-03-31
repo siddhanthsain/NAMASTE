@@ -33,13 +33,15 @@ async def search_icd11(query: str, use_tm2: bool = False) -> list:
             "API-Version": "v2"
         }
 
+        # Use 2025 release for TM2 (TM2 was added Feb 2025)
+        release = "2025-01" if use_tm2 else "2024-01"
         params = {"q": query, "flatResults": "true", "highlightingEnabled": "false"}
         if use_tm2:
             params["chapterFilter"] = "26"
 
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(
-                f"{settings.WHO_ICD_API_BASE}/mms/search",
+                f"https://id.who.int/icd/release/11/{release}/mms/search",
                 headers=headers,
                 params=params
             )
