@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import JSONResponse
 from app.services.ingestion import ingest_namaste_csv, ingest_xls_files
 import os
@@ -17,9 +17,15 @@ async def ingest(filepath: str = "/app/data/namaste_sample.csv"):
         return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
 
 @router.post("/ingest-xls")
-async def ingest_xls(data_dir: str = "/app/data"):
+async def ingest_xls(background_tasks: BackgroundTasks, data_dir: str = "/app/data"):
     try:
-        result = await ingest_xls_files(data_dir)
-        return {"message": "XLS ingestion complete", "result": result}
+        if not os.path.exists(data_dir):
+            return JSONResponse(status_code=404, content={"detail": f"Data dir not found: {data_dir}"})
+        files = os.listdir(data_dir)
+        xls_files = [f for f in files if f.endswith('.xls')]
+        if not xls_files:
+            return JSONResponse(status_code=404, content={"detail": "No XLS files found", "files": files})
+        background_tasks.add_task(ingest_xls_files, data_dir)
+        return {"message": "XLS ingestion started in background", "files_found": xls_files}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
