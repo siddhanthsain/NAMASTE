@@ -286,7 +286,7 @@ export default function Home() {
         {/* Footer */}
         <div className="mt-12 pt-6 border-t border-gray-800/60 flex justify-between items-center">
           <div className="text-xs text-gray-600">
-            Built in response to SIH 2025 · Ministry of Ayush problem statement
+            © 2026 NAMASTE FHIR Service
           </div>
           <div className="flex gap-4 text-xs text-gray-600">
             <a href="https://namaste.ayush.gov.in" target="_blank" className="hover:text-emerald-500 transition-colors">NAMASTE Portal</a>
