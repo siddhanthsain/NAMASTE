@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from app.services.icd_client import search_icd11
-from app.services.term_extractor import extract_search_term
+from app.services.term_extractor import extract_search_term, clean_for_tm2_search
 from app.database import get_db
 from datetime import datetime
 import asyncio
@@ -17,10 +17,7 @@ async def suggest_mapping(namaste_code: str):
 
     english_term = extract_search_term(doc["term_english"])
     original_term = doc.get("term_original", "").strip()
-
-    # For TM2: use original Sanskrit/Tamil/Arabic term
-    # For biomedicine: use English term
-    tm2_query = original_term if original_term and original_term not in ["nan", "-", ""] else english_term
+    tm2_query = clean_for_tm2_search(original_term, doc["term_english"])
     bio_query = english_term
 
     tm2_results = await search_icd11(tm2_query, use_tm2=True)
@@ -77,7 +74,7 @@ async def bulk_map(batch_size: int = 50, system: str = None, status: str = "unma
         try:
             english_term = extract_search_term(doc["term_english"])
             original_term = doc.get("term_original", "").strip()
-            tm2_query = original_term if original_term and original_term not in ["nan", "-", ""] else english_term
+            tm2_query = clean_for_tm2_search(original_term, doc["term_english"])
             bio_query = english_term
 
             tm2_results = await search_icd11(tm2_query, use_tm2=True)
