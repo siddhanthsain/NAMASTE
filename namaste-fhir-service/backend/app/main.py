@@ -7,6 +7,8 @@ from app.routes.namaste import router as namaste_router
 from app.routes.mapping import router as mapping_router
 from app.routes.fhir import router as fhir_router
 from app.routes.stats import router as stats_router
+from app.routes.auth import router as auth_router
+from app.routes.validation import router as validation_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +35,8 @@ app.include_router(namaste_router)
 app.include_router(mapping_router)
 app.include_router(fhir_router)
 app.include_router(stats_router)
+app.include_router(auth_router)
+app.include_router(validation_router)
 
 @app.get("/health")
 async def health():

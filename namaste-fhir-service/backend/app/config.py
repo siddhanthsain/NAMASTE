@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     WHO_CLIENT_ID: str = ""
     WHO_CLIENT_SECRET: str = ""
     APP_ENV: str = "development"
+    JWT_SECRET: str = "namaste-fhir-jwt-2025-secure"
+    ADMIN_KEY: str = "namaste-admin-2025"
 
     class Config:
         env_file = ".env"
