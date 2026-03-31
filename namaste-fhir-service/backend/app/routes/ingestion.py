@@ -10,7 +10,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 async def ingest(filepath: str = "/app/data/namaste_sample.csv"):
     try:
         if not os.path.exists(filepath):
-            return JSONResponse(status_code=404, content={"detail": f"File not found: {filepath}", "cwd": os.getcwd(), "files": os.listdir("/app/data")})
+            return JSONResponse(status_code=404, content={"detail": f"File not found: {filepath}", "files": os.listdir("/app/data") if os.path.exists("/app/data") else []})
         result = await ingest_namaste_csv(filepath)
         return {"message": "Ingestion complete", "result": result}
     except Exception as e:
