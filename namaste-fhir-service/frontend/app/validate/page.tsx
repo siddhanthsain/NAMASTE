@@ -20,7 +20,7 @@ export default function ValidateLogin() {
       if (!res.ok) { setError(data.detail || "Login failed"); setLoading(false); return; }
       localStorage.setItem("expert_token", data.token);
       localStorage.setItem("expert_name", data.name);
-      router.push("/validate/queue");
+      window.location.href = "/validate/queue";
     } catch {
       setError("Connection failed");
     }
