@@ -56,7 +56,7 @@ export default function ValidationQueue() {
   useEffect(() => {
     const t = localStorage.getItem("expert_token");
     const n = localStorage.getItem("expert_name");
-    if (t === null) { router.push("/validate"); return; }
+    if (t === null) { window.location.href = "/validate"; return; }
     setToken(t);
     setExpert(n || "Expert");
     fetchQueue(t);
@@ -69,7 +69,7 @@ export default function ValidationQueue() {
         headers: { Authorization: `Bearer ${t}` }
       });
       const data = await res.json();
-      if (res.status === 401) { router.push("/validate"); return; }
+      if (res.status === 401) { window.location.href = "/validate"; return; }
       setCodes(data.codes || []);
       setTotalQueue(data.total_queue);
       setContributions(data.your_contributions);
@@ -189,7 +189,7 @@ export default function ValidationQueue() {
           <span className="text-xs text-gray-600">{contributions} contributions</span>
           <span className="text-xs text-amber-500/70">{totalQueue.toLocaleString()} remaining</span>
           <a href="/" className="text-xs text-gray-600 hover:text-gray-400">← Public</a>
-          <button onClick={() => { localStorage.clear(); router.push("/validate"); }} className="text-xs text-gray-600 hover:text-red-400">Logout</button>
+          <button onClick={() => { localStorage.clear(); window.location.href = "/validate"; }} className="text-xs text-gray-600 hover:text-red-400">Logout</button>
         </div>
       </div>
 
