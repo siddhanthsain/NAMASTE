@@ -292,6 +292,7 @@ export default function Home() {
             <a href="https://namaste.ayush.gov.in" target="_blank" className="hover:text-emerald-500 transition-colors">NAMASTE Portal</a>
             <a href="https://icd.who.int" target="_blank" className="hover:text-emerald-500 transition-colors">WHO ICD-11</a>
             <a href="https://abdm.gov.in" target="_blank" className="hover:text-emerald-500 transition-colors">ABDM</a>
+            <a href="/validate" className="hover:text-emerald-500 transition-colors">Expert Portal</a>
           </div>
         </div>
       </div>
