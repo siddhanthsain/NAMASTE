@@ -3,31 +3,36 @@ from app.database import get_db
 from app.routes.auth import get_current_expert
 from datetime import datetime
 from typing import Optional
+import random
 
 router = APIRouter(prefix="/validation", tags=["validation"])
 
 @router.get("/queue")
-async def get_queue(limit: int = 10, system: Optional[str] = None, expert=Depends(get_current_expert)):
+async def get_queue(limit: int = 50, system: Optional[str] = None, expert=Depends(get_current_expert)):
     db = get_db()
     collection = db["namaste_codes"]
 
-    query = {"mapping_status": "no_match"}
-    if system:
-        query["system"] = system
-
-    # Exclude codes already validated by this expert
     validated = await db["validations"].distinct("namaste_code", {"expert_email": expert["email"]})
-    if validated:
-        query["namaste_code"] = {"$nin": validated}
+    
+    results = []
+    systems = [system] if system else ["Ayurveda", "Siddha", "Unani"]
+    per_system = max(1, limit // len(systems))
 
-    cursor = collection.find(query, {"_id": 0}).limit(limit)
-    codes = await cursor.to_list(length=limit)
+    for sys in systems:
+        query = {"mapping_status": "no_match", "system": sys}
+        if validated:
+            query["namaste_code"] = {"$nin": validated}
+        cursor = collection.find(query, {"_id": 0}).limit(per_system)
+        docs = await cursor.to_list(length=per_system)
+        results.extend(docs)
+
+    random.shuffle(results)
 
     total_queue = await collection.count_documents({"mapping_status": "no_match"})
     expert_done = await db["validations"].count_documents({"expert_email": expert["email"]})
 
     return {
-        "codes": codes,
+        "codes": results[:limit],
         "total_queue": total_queue,
         "your_contributions": expert_done
     }
@@ -45,10 +50,6 @@ async def decide(
 ):
     db = get_db()
     collection = db["namaste_codes"]
-
-    doc = await collection.find_one({"namaste_code": namaste_code}, {"_id": 0})
-    if not doc:
-        return {"error": "Code not found"}
 
     validation = {
         "namaste_code": namaste_code,

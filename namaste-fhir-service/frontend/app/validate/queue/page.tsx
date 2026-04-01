@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 
 const API = "https://namaste-fhir-backend.onrender.com";
 
@@ -18,21 +17,22 @@ interface NAMASTECode {
   mapping_status: string;
 }
 
-interface WHOResult {
-  theCode: string;
-  title: string;
-  chapter: string;
+interface ICDResult {
+  code: string;
+  display: string;
   score: number;
+  chapter: string;
 }
 
-const SYSTEM_COLOR: Record<string, string> = {
-  Ayurveda: "text-emerald-400 bg-emerald-950/40",
-  Siddha: "text-sky-400 bg-sky-950/40",
-  Unani: "text-amber-400 bg-amber-950/40",
+const SYS: Record<string, string> = {
+  Ayurveda: "bg-emerald-950 text-emerald-400 border-emerald-800",
+  Siddha: "bg-sky-950 text-sky-400 border-sky-800",
+  Unani: "bg-amber-950 text-amber-400 border-amber-800",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function ValidationQueue() {
-  const router = useRouter();
   const [expert, setExpert] = useState("");
   const [token, setToken] = useState("");
   const [codes, setCodes] = useState<NAMASTECode[]>([]);
@@ -43,56 +43,63 @@ export default function ValidationQueue() {
   const [submitting, setSubmitting] = useState(false);
   const [listSearch, setListSearch] = useState("");
   const [listSearching, setListSearching] = useState(false);
+  const [systemFilter, setSystemFilter] = useState("All");
   const [tm2Code, setTm2Code] = useState("");
   const [tm2Display, setTm2Display] = useState("");
   const [bioCode, setBioCode] = useState("");
   const [bioDisplay, setBioDisplay] = useState("");
   const [notes, setNotes] = useState("");
   const [whoQuery, setWhoQuery] = useState("");
-  const [whoResults, setWhoResults] = useState<WHOResult[]>([]);
+  const [whoTM2, setWhoTM2] = useState<ICDResult[]>([]);
+  const [whoBio, setWhoBio] = useState<ICDResult[]>([]);
   const [whoLoading, setWhoLoading] = useState(false);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
     const t = localStorage.getItem("expert_token");
     const n = localStorage.getItem("expert_name");
-    if (t === null) { window.location.href = "/validate"; return; }
+    if (!t) { window.location.href = "/validate"; return; }
     setToken(t);
     setExpert(n || "Expert");
     fetchQueue(t);
   }, []);
 
-  const fetchQueue = useCallback(async (t: string) => {
+  const fetchQueue = useCallback(async (t: string, system?: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/validation/queue?limit=50`, {
+      const sys = system && system !== "All" ? `&system=${system}` : "";
+      const res = await fetch(`${API}/validation/queue?limit=60${sys}`, {
         headers: { Authorization: `Bearer ${t}` }
       });
-      const data = await res.json();
       if (res.status === 401) { window.location.href = "/validate"; return; }
+      const data = await res.json();
       setCodes(data.codes || []);
-      setTotalQueue(data.total_queue);
-      setContributions(data.your_contributions);
+      setTotalQueue(data.total_queue || 0);
+      setContributions(data.your_contributions || 0);
     } catch {}
     setLoading(false);
   }, []);
 
   const searchList = useCallback(async (q: string) => {
-    if (q.length < 2) { fetchQueue(token); return; }
+    if (q.length < 2) { fetchQueue(token, systemFilter); return; }
     setListSearching(true);
     try {
       const res = await fetch(`${API}/namaste/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
-      const noMatch = (data.results || []).filter((c: NAMASTECode) => c.mapping_status === "no_match");
-      setCodes(noMatch);
+      setCodes((data.results || []).filter((c: NAMASTECode) => c.mapping_status === "no_match"));
     } catch {}
     setListSearching(false);
-  }, [token]);
+  }, [token, systemFilter]);
 
   useEffect(() => {
-    const t = setTimeout(() => searchList(listSearch), 400);
+    const t = setTimeout(() => { if (token) searchList(listSearch); }, 400);
     return () => clearTimeout(t);
   }, [listSearch]);
+
+  const handleSystemFilter = (sys: string) => {
+    setSystemFilter(sys);
+    fetchQueue(token, sys);
+  };
 
   const selectCode = (code: NAMASTECode) => {
     setSelected(code);
@@ -101,264 +108,274 @@ export default function ValidationQueue() {
     setBioCode(code.icd_biomedicine_code || "");
     setBioDisplay(code.icd_biomedicine_display || "");
     setNotes("");
-    setWhoQuery(code.term_original && !code.term_original.includes("H") ? code.term_original : code.term_english.replace(/\(.*\)/, "").trim());
-    setWhoResults([]);
+    setWhoTM2([]);
+    setWhoBio([]);
+    const q = code.term_original && code.term_original.length < 30 && !code.term_original.includes("H")
+      ? code.term_original
+      : code.term_english.replace(/\(.*\)/, "").trim();
+    setWhoQuery(q);
   };
 
   const searchWHO = async () => {
     if (whoQuery.length < 2) return;
     setWhoLoading(true);
-    setWhoResults([]);
+    setWhoTM2([]);
+    setWhoBio([]);
     try {
-      const res = await fetch(`${API}/namaste/search?q=${encodeURIComponent(whoQuery)}`);
-      const data = await res.json();
-      const mapped = (data.results || [])
-        .filter((r: NAMASTECode) => r.icd_biomedicine_code || r.tm2_code)
-        .slice(0, 5)
-        .map((r: NAMASTECode) => ({
-          theCode: r.icd_biomedicine_code || r.tm2_code || "",
-          title: r.icd_biomedicine_display || r.tm2_display || r.term_english,
-          chapter: r.tm2_code ? "26" : "bio",
-          score: r.mapping_status === "complete" ? 1 : 0.8
-        }));
-
-      const whoRes = await fetch(
-        `https://id.who.int/icd/release/11/2025-01/mms/search?q=${encodeURIComponent(whoQuery)}&flatResults=true&highlightingEnabled=false&chapterFilter=26`,
-        { headers: { "Accept": "application/json", "Accept-Language": "en", "API-Version": "v2" } }
-      );
-      const bioRes = await fetch(
-        `https://id.who.int/icd/release/11/2025-01/mms/search?q=${encodeURIComponent(whoQuery)}&flatResults=true&highlightingEnabled=false`,
-        { headers: { "Accept": "application/json", "Accept-Language": "en", "API-Version": "v2" } }
-      );
-
-      const whoData = whoRes.ok ? await whoRes.json() : { destinationEntities: [] };
-      const bioData = bioRes.ok ? await bioRes.json() : { destinationEntities: [] };
-
-      const tm2Results = (whoData.destinationEntities || []).slice(0, 3).map((e: any) => ({
-        theCode: e.theCode, title: e.title, chapter: "26", score: e.score
-      }));
-      const bioResults = (bioData.destinationEntities || []).slice(0, 3).map((e: any) => ({
-        theCode: e.theCode, title: e.title, chapter: e.chapter, score: e.score
-      }));
-
-      setWhoResults([...tm2Results, ...bioResults, ...mapped].slice(0, 8));
-    } catch (err) {
-      console.error(err);
-    }
+      const [tm2Res, bioRes] = await Promise.all([
+        fetch(`${API}/namaste/icd-search?q=${encodeURIComponent(whoQuery)}&chapter=26`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`${API}/namaste/icd-search?q=${encodeURIComponent(whoQuery)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      if (tm2Res.ok) { const d = await tm2Res.json(); setWhoTM2(d.results || []); }
+      if (bioRes.ok) { const d = await bioRes.json(); setWhoBio(d.results || []); }
+    } catch {}
     setWhoLoading(false);
   };
 
-  const applyResult = (r: WHOResult, type: "tm2" | "bio") => {
-    if (type === "tm2") { setTm2Code(r.theCode); setTm2Display(r.title); }
-    else { setBioCode(r.theCode); setBioDisplay(r.title); }
-  };
-
   const submitDecision = async (decision: string) => {
-    if (selected === null) return;
+    if (!selected) return;
     setSubmitting(true);
     const params = new URLSearchParams({ decision });
     if (tm2Code) { params.set("tm2_code", tm2Code); params.set("tm2_display", tm2Display); }
     if (bioCode) { params.set("icd_biomedicine_code", bioCode); params.set("icd_biomedicine_display", bioDisplay); }
     if (notes) params.set("notes", notes);
     await fetch(`${API}/validation/decide/${selected.namaste_code}?${params}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` }
+      method: "POST", headers: { Authorization: `Bearer ${token}` }
     });
     setContributions(c => c + 1);
     setTotalQueue(q => q - 1);
     setCodes(prev => prev.filter(c => c.namaste_code !== selected.namaste_code));
     setSelected(null);
-    setWhoResults([]);
-    const msg = decision === "edited" ? "Mapping submitted" : decision === "rejected" ? "Rejected" : "Skipped";
-    setToast(msg);
+    setToast(decision === "edited" ? "✓ Mapping submitted" : decision === "rejected" ? "✗ Rejected" : "→ Skipped");
     setTimeout(() => setToast(""), 2500);
     setSubmitting(false);
   };
 
+  const filtered = codes.filter(c =>
+    systemFilter === "All" || c.system === systemFilter
+  );
+
   return (
-    <main className="h-screen bg-[#07090a] text-white flex flex-col overflow-hidden">
-      {/* Top bar */}
-      <div className="border-b border-white/5 px-5 py-2.5 flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-emerald-400 font-semibold text-sm">NAMASTE Expert Validation</span>
+    <main className="h-screen bg-[#06080a] text-white flex flex-col overflow-hidden font-sans">
+      {/* Header */}
+      <header className="border-b border-white/[0.06] px-5 py-2.5 flex justify-between items-center shrink-0 bg-[#06080a]/90 backdrop-blur">
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+            <span className="text-emerald-400 text-xs font-bold">N</span>
+          </div>
+          <span className="text-sm font-semibold text-white">Expert Validation</span>
           <span className="text-gray-700 text-xs">·</span>
           <span className="text-gray-500 text-xs">{expert}</span>
         </div>
-        <div className="flex items-center gap-5">
-          {toast && <span className="text-xs text-emerald-400">{toast}</span>}
+        <div className="flex items-center gap-4">
+          {toast && <span className="text-xs text-emerald-400 font-medium">{toast}</span>}
           <span className="text-xs text-gray-600">{contributions} contributions</span>
-          <span className="text-xs text-amber-500/70">{(totalQueue || 0).toLocaleString()} remaining</span>
-          <a href="/" className="text-xs text-gray-600 hover:text-gray-400">← Public</a>
-          <button onClick={() => { localStorage.clear(); window.location.href = "/validate"; }} className="text-xs text-gray-600 hover:text-red-400">Logout</button>
+          <span className="text-xs font-medium text-amber-400">{(totalQueue || 0).toLocaleString()} remaining</span>
+          <a href="/" className="text-xs text-gray-600 hover:text-gray-300 transition-colors">← Public</a>
+          <button onClick={() => { localStorage.clear(); window.location.href = "/validate"; }}
+            className="text-xs text-gray-600 hover:text-red-400 transition-colors">Logout</button>
         </div>
-      </div>
+      </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT PANEL — searchable list */}
-        <div className="w-96 border-r border-white/5 flex flex-col shrink-0">
-          <div className="p-3 border-b border-white/5 space-y-2">
+        {/* LEFT — Code list */}
+        <aside className="w-80 border-r border-white/[0.06] flex flex-col shrink-0 bg-[#07090b]">
+          <div className="p-3 space-y-2 border-b border-white/[0.06]">
             <input
               value={listSearch}
               onChange={e => setListSearch(e.target.value)}
-              placeholder="Search by NAMASTE code, English term, Sanskrit..."
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-600/40"
+              placeholder="Search code, term, Sanskrit..."
+              className="w-full bg-white/5 border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-600/50 transition-colors"
             />
-            <div className="text-xs text-gray-600">{codes.length} codes shown · {(totalQueue || 0).toLocaleString()} total unmapped</div>
+            <div className="flex gap-1 flex-wrap">
+              {["All", "Ayurveda", "Siddha", "Unani"].map(s => (
+                <button key={s} onClick={() => handleSystemFilter(s)}
+                  className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${systemFilter === s ? "bg-emerald-900/50 text-emerald-300 border-emerald-700/50" : "text-gray-500 border-transparent hover:text-gray-300"}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <div className="text-xs text-gray-700">{filtered.length} shown · {(totalQueue || 0).toLocaleString()} total</div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {loading || listSearching ? (
-              <div className="p-4 text-xs text-gray-600">{listSearching ? "Searching..." : "Loading..."}</div>
-            ) : codes.length === 0 ? (
+              <div className="p-4 text-xs text-gray-600 animate-pulse">Loading...</div>
+            ) : filtered.length === 0 ? (
               <div className="p-4 text-xs text-gray-600">No codes found</div>
-            ) : codes.map(code => (
-              <div
-                key={code.namaste_code}
-                onClick={() => selectCode(code)}
-                className={`px-4 py-3 border-b border-white/5 cursor-pointer transition-all ${selected?.namaste_code === code.namaste_code ? "bg-emerald-950/50 border-l-2 border-l-emerald-500" : "hover:bg-white/5"}`}
-              >
+            ) : filtered.map(code => (
+              <div key={code.namaste_code} onClick={() => selectCode(code)}
+                className={`px-3 py-3 border-b border-white/[0.04] cursor-pointer transition-all group ${selected?.namaste_code === code.namaste_code ? "bg-emerald-950/40 border-l-2 border-l-emerald-500" : "hover:bg-white/[0.03]"}`}>
                 <div className="flex justify-between items-start mb-1">
-                  <span className="text-emerald-400 font-mono text-xs font-medium">{code.namaste_code}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded text-xs ${SYSTEM_COLOR[code.system] || "text-gray-500 bg-gray-800"}`}>{code.system}</span>
+                  <span className="font-mono text-xs text-emerald-400 font-medium">{code.namaste_code}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded border text-xs ${SYS[code.system] || "bg-gray-800 text-gray-500 border-gray-700"}`}>{code.system[0]}</span>
                 </div>
-                <div className="text-sm text-gray-200 leading-tight">{code.term_english}</div>
-                <div className="text-xs text-gray-500 mt-0.5 font-mono">{code.term_original}</div>
+                <div className="text-sm text-gray-200 leading-snug truncate">{code.term_english}</div>
+                <div className="text-xs text-gray-600 font-mono truncate mt-0.5">{code.term_original}</div>
               </div>
             ))}
           </div>
 
-          <div className="p-2 border-t border-white/5">
-            <button onClick={() => fetchQueue(token)} className="w-full text-xs text-gray-600 hover:text-emerald-500 py-1.5 transition-colors">
-              Refresh queue
+          <div className="p-2 border-t border-white/[0.06]">
+            <button onClick={() => fetchQueue(token, systemFilter)}
+              className="w-full text-xs text-gray-600 hover:text-emerald-500 py-1.5 transition-colors">
+              ↻ Refresh queue
             </button>
           </div>
-        </div>
+        </aside>
 
-        {/* RIGHT PANEL */}
-        {selected === null ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-700">
-            <div className="text-4xl">←</div>
-            <div className="text-sm">Select a NAMASTE code to start mapping</div>
-            <div className="text-xs text-gray-800">Search by code, English term, or Sanskrit term on the left</div>
+        {/* RIGHT — Detail */}
+        {!selected ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-800">
+            <div className="text-3xl">←</div>
+            <div className="text-sm">Select a code from the list</div>
+            <div className="text-xs">Search by NAMASTE code, English term, or Sanskrit</div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-6 space-y-5 max-w-3xl">
-              {/* Code header */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-mono text-sm text-emerald-400 font-medium">{selected.namaste_code}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded ${SYSTEM_COLOR[selected.system]}`}>{selected.system}</span>
-                  {selected.category && selected.category !== "-" && (
-                    <span className="text-xs text-gray-600 bg-gray-800/60 px-2 py-0.5 rounded">{selected.category}</span>
-                  )}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="max-w-2xl space-y-4">
+
+              {/* Code card */}
+              <div className="bg-white/[0.03] border border-white/[0.08] rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="font-mono text-sm text-emerald-400 font-semibold">{selected.namaste_code}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded border ${SYS[selected.system]}`}>{selected.system}</span>
+                  {selected.category && selected.category !== "-" &&
+                    <span className="text-xs text-gray-600 bg-gray-800/60 px-2 py-0.5 rounded">{selected.category}</span>}
                 </div>
-                <h2 className="text-xl font-semibold text-white">{selected.term_english}</h2>
-                <p className="text-gray-500 text-sm mt-1 font-mono">{selected.term_original}</p>
+                <h2 className="text-xl font-semibold text-white mb-1">{selected.term_english}</h2>
+                <p className="text-sm font-mono text-gray-500">{selected.term_original}</p>
                 {selected.short_definition && selected.short_definition !== "-" && (
-                  <div className="mt-3 bg-black/30 rounded-lg p-3 border border-white/5">
-                    <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Definition</div>
+                  <div className="mt-3 bg-black/20 border border-white/[0.05] rounded-lg p-3">
+                    <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Definition</div>
                     <div className="text-sm text-gray-300">{selected.short_definition}</div>
                   </div>
                 )}
               </div>
 
               {/* WHO ICD-11 Search */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                <div className="text-xs text-gray-400 uppercase tracking-widest mb-3">Search WHO ICD-11 · Find matching codes</div>
-                <div className="flex gap-2 mb-3">
-                  <input
-                    value={whoQuery}
-                    onChange={e => setWhoQuery(e.target.value)}
+              <div className="bg-white/[0.03] border border-white/[0.08] rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-widest">Search WHO ICD-11</div>
+                  <div className="text-xs text-gray-700">Results auto-fill the mapping below</div>
+                </div>
+                <div className="flex gap-2 mb-4">
+                  <input value={whoQuery} onChange={e => setWhoQuery(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && searchWHO()}
-                    placeholder="Type Sanskrit term, English equivalent, or symptom..."
-                    className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-600/40"
-                  />
+                    placeholder="Type Sanskrit term or English equivalent..."
+                    className="flex-1 bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-600/40 transition-colors" />
                   <button onClick={searchWHO} disabled={whoLoading}
-                    className="bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 text-emerald-300 text-sm px-5 rounded-lg transition-colors shrink-0">
-                    {whoLoading ? "Searching..." : "Search"}
+                    className="bg-emerald-800/50 hover:bg-emerald-700/50 disabled:opacity-40 text-emerald-300 text-sm px-4 rounded-lg transition-colors border border-emerald-700/30 shrink-0">
+                    {whoLoading ? "..." : "Search"}
                   </button>
                 </div>
 
-                {whoResults.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="text-xs text-gray-600 mb-2">{whoResults.length} results — click TM2 or Bio to apply</div>
-                    {whoResults.map((r, i) => (
-                      <div key={i} className="flex items-center gap-3 bg-black/30 border border-white/5 rounded-lg px-3 py-2.5 hover:border-white/10 transition-all">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm text-emerald-400 shrink-0">{r.theCode}</span>
-                            {r.chapter === "26" && <span className="text-xs text-amber-400 bg-amber-950/40 px-1.5 py-0.5 rounded shrink-0">TM2</span>}
-                            {r.chapter !== "26" && <span className="text-xs text-blue-400 bg-blue-950/40 px-1.5 py-0.5 rounded shrink-0">Bio</span>}
-                          </div>
-                          <div className="text-xs text-gray-300 truncate mt-0.5">{r.title}</div>
+                {(whoTM2.length > 0 || whoBio.length > 0) && (
+                  <div className="space-y-3">
+                    {whoTM2.length > 0 && (
+                      <div>
+                        <div className="text-xs text-amber-500/70 mb-1.5 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
+                          TM2 Matches (Chapter 26 — Traditional Medicine)
                         </div>
-                        <div className="flex gap-1.5 shrink-0">
-                          <button onClick={() => applyResult(r, "tm2")}
-                            className="text-xs bg-emerald-900/60 text-emerald-400 hover:bg-emerald-800/60 px-2.5 py-1 rounded transition-colors">
-                            → TM2
-                          </button>
-                          <button onClick={() => applyResult(r, "bio")}
-                            className="text-xs bg-blue-900/60 text-blue-400 hover:bg-blue-800/60 px-2.5 py-1 rounded transition-colors">
-                            → Bio
-                          </button>
+                        <div className="space-y-1">
+                          {whoTM2.map((r, i) => (
+                            <div key={i} className="flex items-center gap-3 bg-amber-950/20 border border-amber-900/30 rounded-lg px-3 py-2.5 hover:border-amber-700/40 transition-all">
+                              <span className="font-mono text-sm text-amber-400 shrink-0 w-14">{r.code}</span>
+                              <span className="text-xs text-gray-300 flex-1 truncate">{r.display}</span>
+                              <button onClick={() => { setTm2Code(r.code); setTm2Display(r.display); }}
+                                className="text-xs bg-amber-900/50 text-amber-400 hover:bg-amber-800/50 px-2.5 py-1 rounded transition-colors shrink-0">
+                                Use as TM2
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    )}
+                    {whoBio.length > 0 && (
+                      <div>
+                        <div className="text-xs text-blue-400/70 mb-1.5 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block"></span>
+                          Biomedicine Matches (ICD-11 Standard Chapters)
+                        </div>
+                        <div className="space-y-1">
+                          {whoBio.map((r, i) => (
+                            <div key={i} className="flex items-center gap-3 bg-blue-950/20 border border-blue-900/30 rounded-lg px-3 py-2.5 hover:border-blue-700/40 transition-all">
+                              <span className="font-mono text-sm text-blue-400 shrink-0 w-14">{r.code}</span>
+                              <span className="text-xs text-gray-300 flex-1 truncate">{r.display}</span>
+                              <button onClick={() => { setBioCode(r.code); setBioDisplay(r.display); }}
+                                className="text-xs bg-blue-900/50 text-blue-400 hover:bg-blue-800/50 px-2.5 py-1 rounded transition-colors shrink-0">
+                                Use as Bio
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
               {/* Mapping form */}
-              <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-                <div className="text-xs text-gray-400 uppercase tracking-widest">Your Mapping Decision</div>
+              <div className="bg-white/[0.03] border border-white/[0.08] rounded-xl p-5 space-y-4">
+                <div className="text-xs text-gray-500 uppercase tracking-widest">Your Mapping Decision</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-gray-500 mb-1.5 block">TM2 Code <span className="text-gray-700">(Chapter 26)</span></label>
-                    <input value={tm2Code} onChange={e => setTm2Code(e.target.value)}
-                      placeholder="e.g. SP51"
-                      className="w-full bg-black/40 border border-emerald-900/40 rounded-lg px-3 py-2 text-sm text-emerald-400 font-mono focus:outline-none focus:border-emerald-600/60" />
+                    <label className="text-xs text-gray-600 mb-1.5 block">TM2 Code <span className="text-gray-700">(Chapter 26)</span></label>
+                    <input value={tm2Code} onChange={e => setTm2Code(e.target.value)} placeholder="e.g. SP51"
+                      className="w-full bg-black/30 border border-amber-900/30 rounded-lg px-3 py-2 text-sm text-amber-400 font-mono focus:outline-none focus:border-amber-600/50 transition-colors" />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 mb-1.5 block">TM2 Display Name</label>
-                    <input value={tm2Display} onChange={e => setTm2Display(e.target.value)}
-                      placeholder="e.g. Fever disorder (TM2)"
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-600/40" />
+                    <label className="text-xs text-gray-600 mb-1.5 block">TM2 Display Name</label>
+                    <input value={tm2Display} onChange={e => setTm2Display(e.target.value)} placeholder="Fever disorder (TM2)"
+                      className="w-full bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none transition-colors" />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 mb-1.5 block">ICD-11 Biomedicine Code</label>
-                    <input value={bioCode} onChange={e => setBioCode(e.target.value)}
-                      placeholder="e.g. MG26"
-                      className="w-full bg-black/40 border border-blue-900/40 rounded-lg px-3 py-2 text-sm text-blue-400 font-mono focus:outline-none focus:border-blue-600/60" />
+                    <label className="text-xs text-gray-600 mb-1.5 block">Biomedicine Code</label>
+                    <input value={bioCode} onChange={e => setBioCode(e.target.value)} placeholder="e.g. MG26"
+                      className="w-full bg-black/30 border border-blue-900/30 rounded-lg px-3 py-2 text-sm text-blue-400 font-mono focus:outline-none focus:border-blue-600/50 transition-colors" />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 mb-1.5 block">Biomedicine Display Name</label>
-                    <input value={bioDisplay} onChange={e => setBioDisplay(e.target.value)}
-                      placeholder="e.g. Fever of other or unknown origin"
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600/40" />
+                    <label className="text-xs text-gray-600 mb-1.5 block">Biomedicine Display</label>
+                    <input value={bioDisplay} onChange={e => setBioDisplay(e.target.value)} placeholder="Fever of other or unknown origin"
+                      className="w-full bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none transition-colors" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1.5 block">Clinical Notes <span className="text-gray-700">(reasoning, references)</span></label>
+                  <label className="text-xs text-gray-600 mb-1.5 block">Clinical Notes <span className="text-gray-700">(reasoning, references)</span></label>
                   <input value={notes} onChange={e => setNotes(e.target.value)}
-                    placeholder="e.g. Maps to fever category based on symptom overlap..."
-                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                    placeholder="e.g. Maps to fever category based on primary symptom..."
+                    className="w-full bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none transition-colors" />
                 </div>
+
+                {/* Preview */}
+                {(tm2Code || bioCode) && (
+                  <div className="bg-black/30 border border-white/[0.06] rounded-lg p-3 space-y-1">
+                    <div className="text-xs text-gray-600 mb-2">Preview</div>
+                    {tm2Code && <div className="text-xs text-gray-400"><span className="text-amber-400 font-mono">{tm2Code}</span> · {tm2Display} <span className="text-gray-600">(TM2)</span></div>}
+                    {bioCode && <div className="text-xs text-gray-400"><span className="text-blue-400 font-mono">{bioCode}</span> · {bioDisplay} <span className="text-gray-600">(Biomedicine)</span></div>}
+                    <div className="text-xs text-emerald-500 mt-1">Status: {tm2Code && bioCode ? "complete" : "partial"}</div>
+                  </div>
+                )}
               </div>
 
-              {/* Actions */}
+              {/* Action buttons */}
               <div className="grid grid-cols-3 gap-3 pb-6">
                 <button onClick={() => submitDecision("rejected")} disabled={submitting}
-                  className="bg-red-950/50 hover:bg-red-900/50 border border-red-800/30 text-red-400 rounded-xl py-3 text-sm font-medium transition-colors disabled:opacity-40">
-                  Reject — No mapping exists
+                  className="bg-red-950/40 hover:bg-red-900/40 border border-red-800/30 text-red-400 rounded-xl py-3 text-sm font-medium transition-all disabled:opacity-40">
+                  ✗ No Mapping
                 </button>
                 <button onClick={() => submitDecision("edited")} disabled={submitting}
-                  className="bg-emerald-950/50 hover:bg-emerald-900/50 border border-emerald-800/30 text-emerald-400 rounded-xl py-3 text-sm font-medium transition-colors disabled:opacity-40">
-                  Submit Mapping
+                  className="bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-800/30 text-emerald-400 rounded-xl py-3 text-sm font-medium transition-all disabled:opacity-40">
+                  ✓ Submit Mapping
                 </button>
                 <button onClick={() => submitDecision("approved")} disabled={submitting}
-                  className="bg-gray-800/40 hover:bg-gray-700/40 border border-gray-700/30 text-gray-500 rounded-xl py-3 text-sm font-medium transition-colors disabled:opacity-40">
-                  Skip for now
+                  className="bg-gray-800/30 hover:bg-gray-700/30 border border-gray-700/30 text-gray-500 rounded-xl py-3 text-sm font-medium transition-all disabled:opacity-40">
+                  → Skip
                 </button>
               </div>
             </div>
@@ -368,5 +385,3 @@ export default function ValidationQueue() {
     </main>
   );
 }
-
-export const dynamic = 'force-dynamic';

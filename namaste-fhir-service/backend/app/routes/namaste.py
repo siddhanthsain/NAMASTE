@@ -39,3 +39,10 @@ async def get_by_code(namaste_code: str):
     if not result:
         raise HTTPException(status_code=404, detail=f"Code {namaste_code} not found")
     return result
+
+@router.get("/icd-search")
+async def icd_search(q: str, chapter: str = None):
+    from app.services.icd_client import search_icd11
+    use_tm2 = chapter == "26"
+    results = await search_icd11(q, use_tm2=use_tm2)
+    return {"results": results, "query": q}
