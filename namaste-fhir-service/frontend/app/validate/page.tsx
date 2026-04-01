@@ -75,3 +75,5 @@ export default function ValidateLogin() {
     </main>
   );
 }
+
+export const dynamic = 'force-dynamic';

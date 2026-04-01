@@ -368,3 +368,5 @@ export default function ValidationQueue() {
     </main>
   );
 }
+
+export const dynamic = 'force-dynamic';
