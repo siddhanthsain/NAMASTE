@@ -187,7 +187,7 @@ export default function ValidationQueue() {
         <div className="flex items-center gap-5">
           {toast && <span className="text-xs text-emerald-400">{toast}</span>}
           <span className="text-xs text-gray-600">{contributions} contributions</span>
-          <span className="text-xs text-amber-500/70">{totalQueue.toLocaleString()} remaining</span>
+          <span className="text-xs text-amber-500/70">{(totalQueue || 0).toLocaleString()} remaining</span>
           <a href="/" className="text-xs text-gray-600 hover:text-gray-400">← Public</a>
           <button onClick={() => { localStorage.clear(); window.location.href = "/validate"; }} className="text-xs text-gray-600 hover:text-red-400">Logout</button>
         </div>
@@ -203,7 +203,7 @@ export default function ValidationQueue() {
               placeholder="Search by NAMASTE code, English term, Sanskrit..."
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-600/40"
             />
-            <div className="text-xs text-gray-600">{codes.length} codes shown · {totalQueue.toLocaleString()} total unmapped</div>
+            <div className="text-xs text-gray-600">{codes.length} codes shown · {(totalQueue || 0).toLocaleString()} total unmapped</div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
